@@ -24,6 +24,23 @@ helloworld_pb2, helloworld_pb2_grpc = grpc.protos_and_services(
 )
 
 
+class RetryLoggingInterceptor(grpc.UnaryUnaryClientInterceptor):
+    def intercept_unary_unary(self, continuation, client_call_details, request):
+        start_time = time.time()
+        try:
+            print(f"Making request at {time.strftime('%H:%M:%S')}...")
+            response = continuation(client_call_details, request)
+            elapsed = time.time() - start_time
+            print(f"Request succeeded after {elapsed:.2f}s")
+            return response
+        except grpc.RpcError as e:
+            elapsed = time.time() - start_time
+            print(f"Request failed after {elapsed:.2f}s with status: {e.code()}")
+            if e.code() == grpc.StatusCode.UNAVAILABLE:
+                print("Retrying due to UNAVAILABLE status...")
+            raise
+
+
 def run():
     # The ServiceConfig proto definition can be found:
     # https://github.com/grpc/grpc-proto/blob/ec886024c2f7b7f597ba89d5b7d60c3f94627b17/grpc/service_config/service_config.proto#L377
@@ -46,10 +63,12 @@ def run():
             ]
         }
     )
-    options = []
-    # NOTE: the retry feature will be enabled by default >=v1.40.0
-    options.append(("grpc.enable_retries", 1))
-    options.append(("grpc.service_config", service_config_json))
+    print("Using service config:", service_config_json)
+    
+    options = [
+        ("grpc.enable_retries", 1),
+        ("grpc.service_config", service_config_json),
+    ]
     
     # Enable debug logging
     logging.basicConfig(
@@ -58,34 +77,16 @@ def run():
     )
     
     with grpc.insecure_channel("localhost:50051", options=options) as channel:
+        # Add the interceptor to the channel
+        channel = grpc.intercept_channel(channel, RetryLoggingInterceptor())
         stub = helloworld_pb2_grpc.GreeterStub(channel)
         print("Starting RPC call...")
-        
-        attempt = 1
-        while attempt <= 5:  # Match maxAttempts in retry policy
-            try:
-                print(f"\nAttempt {attempt} at {time.strftime('%H:%M:%S')}")
-                start_time = time.time()
-                response = stub.SayHello(helloworld_pb2.HelloRequest(name="you"))
-                elapsed = time.time() - start_time
-                print(f"Request succeeded after {elapsed:.2f}s")
-                print("Greeter client received: " + response.message)
-                break
-            except grpc.RpcError as e:
-                elapsed = time.time() - start_time
-                print(f"Request failed after {elapsed:.2f}s with status: {e.code()}")
-                if e.code() == grpc.StatusCode.UNAVAILABLE:
-                    print("Retrying due to UNAVAILABLE status...")
-                    attempt += 1
-                    if attempt <= 5:
-                        backoff = min(0.1 * (2 ** (attempt - 1)), 1.0)  # Match retry policy
-                        print(f"Waiting {backoff:.2f}s before next attempt...")
-                        time.sleep(backoff)
-                    else:
-                        print("Max retry attempts reached")
-                        raise
-                else:
-                    raise
+        try:
+            response = stub.SayHello(helloworld_pb2.HelloRequest(name="you"))
+            print("Greeter client received: " + response.message)
+        except grpc.RpcError as e:
+            print(f"RPC failed with status: {e.code()}")
+            print(f"Error details: {e.details()}")
 
 
 if __name__ == "__main__":
