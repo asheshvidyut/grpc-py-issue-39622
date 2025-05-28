@@ -15,12 +15,28 @@
 
 import json
 import logging
+import time
 
 import grpc
 
 helloworld_pb2, helloworld_pb2_grpc = grpc.protos_and_services(
     "helloworld.proto"
 )
+
+
+class RetryLoggingInterceptor(grpc.UnaryUnaryClientInterceptor):
+    def intercept_unary_unary(self, continuation, client_call_details, request):
+        start_time = time.time()
+        try:
+            print(f"Making request at {time.strftime('%H:%M:%S')}...")
+            response = continuation(client_call_details, request)
+            return response
+        except grpc.RpcError as e:
+            elapsed = time.time() - start_time
+            print(f"Request failed after {elapsed:.2f}s with status: {e.code()}")
+            if e.code() == grpc.StatusCode.UNAVAILABLE:
+                print("Retrying due to UNAVAILABLE status...")
+            raise
 
 
 def run():
@@ -49,12 +65,25 @@ def run():
     # NOTE: the retry feature will be enabled by default >=v1.40.0
     options.append(("grpc.enable_retries", 1))
     options.append(("grpc.service_config", service_config_json))
+    
+    # Enable debug logging
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
+    
     with grpc.insecure_channel("localhost:50051", options=options) as channel:
+        # Add the interceptor to the channel
+        channel = grpc.intercept_channel(channel, RetryLoggingInterceptor())
         stub = helloworld_pb2_grpc.GreeterStub(channel)
-        response = stub.SayHello(helloworld_pb2.HelloRequest(name="you"))
-    print("Greeter client received: " + response.message)
+        print("Starting RPC call...")
+        try:
+            response = stub.SayHello(helloworld_pb2.HelloRequest(name="you"))
+            print("Greeter client received: " + response.message)
+        except grpc.RpcError as e:
+            print(f"RPC failed with status: {e.code()}")
+            print(f"Error details: {e.details()}")
 
 
 if __name__ == "__main__":
-    logging.basicConfig()
     run()
