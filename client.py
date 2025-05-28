@@ -24,25 +24,6 @@ helloworld_pb2, helloworld_pb2_grpc = grpc.protos_and_services(
 )
 
 
-class RetryLoggingInterceptor(grpc.UnaryUnaryClientInterceptor):
-    def intercept_unary_unary(self, continuation, client_call_details, request):
-        start_time = time.time()
-        try:
-            print(f"\nMaking request at {time.strftime('%H:%M:%S')}...")
-            print(f"Request details: {client_call_details}")
-            response = continuation(client_call_details, request)
-            elapsed = time.time() - start_time
-            print(f"Request succeeded after {elapsed:.2f}s")
-            return response
-        except grpc.RpcError as e:
-            elapsed = time.time() - start_time
-            print(f"Request failed after {elapsed:.2f}s with status: {e.code()}")
-            print(f"Error details: {e.details()}")
-            if e.code() == grpc.StatusCode.UNAVAILABLE:
-                print("Retrying due to UNAVAILABLE status...")
-            raise
-
-
 def run():
     # The ServiceConfig proto definition can be found:
     # https://github.com/grpc/grpc-proto/blob/ec886024c2f7b7f597ba89d5b7d60c3f94627b17/grpc/service_config/service_config.proto#L377
@@ -50,16 +31,21 @@ def run():
         {
             "methodConfig": [
                 {
-                    # To apply retry to all methods, put [{}] in the "name" field
                     "name": [
                         {"service": "helloworld.Greeter", "method": "SayHello"}
                     ],
                     "retryPolicy": {
                         "maxAttempts": 5,
-                        "initialBackoff": "0.1s",
+                        "initialBackoff": "1s",
                         "maxBackoff": "1s",
                         "backoffMultiplier": 2,
-                        "retryableStatusCodes": ["UNAVAILABLE"],
+                        "retryableStatusCodes": [
+                            "UNAVAILABLE",
+                            "RESOURCE_EXHAUSTED",
+                            "ABORTED",
+                            "INTERNAL",
+                            "UNKNOWN"
+                        ],
                     },
                 }
             ]
@@ -79,17 +65,23 @@ def run():
     )
     
     with grpc.insecure_channel("localhost:50051", options=options) as channel:
-        # Add the interceptor to the channel
-        channel = grpc.intercept_channel(channel, RetryLoggingInterceptor())
         stub = helloworld_pb2_grpc.GreeterStub(channel)
         print("Starting RPC call...")
+        start_time = time.time()
         try:
-            response = stub.SayHello(helloworld_pb2.HelloRequest(name="you"))
+            # Set timeout to 1.5 seconds
+            response = stub.SayHello(
+                helloworld_pb2.HelloRequest(name="you"),
+                timeout=1.5
+            )
             print("Greeter client received: " + response.message)
         except grpc.RpcError as e:
             print(f"RPC failed with status: {e.code()}")
             print(f"Error details: {e.details()}")
             print(f"Debug error string: {e.debug_error_string()}")
+        finally:
+            total_time = time.time() - start_time
+            print(f"Total operation time: {total_time:.2f} seconds")
 
 
 if __name__ == "__main__":
