@@ -28,7 +28,8 @@ class RetryLoggingInterceptor(grpc.UnaryUnaryClientInterceptor):
     def intercept_unary_unary(self, continuation, client_call_details, request):
         start_time = time.time()
         try:
-            print(f"Making request at {time.strftime('%H:%M:%S')}...")
+            print(f"\nMaking request at {time.strftime('%H:%M:%S')}...")
+            print(f"Request details: {client_call_details}")
             response = continuation(client_call_details, request)
             elapsed = time.time() - start_time
             print(f"Request succeeded after {elapsed:.2f}s")
@@ -36,6 +37,7 @@ class RetryLoggingInterceptor(grpc.UnaryUnaryClientInterceptor):
         except grpc.RpcError as e:
             elapsed = time.time() - start_time
             print(f"Request failed after {elapsed:.2f}s with status: {e.code()}")
+            print(f"Error details: {e.details()}")
             if e.code() == grpc.StatusCode.UNAVAILABLE:
                 print("Retrying due to UNAVAILABLE status...")
             raise
@@ -87,6 +89,7 @@ def run():
         except grpc.RpcError as e:
             print(f"RPC failed with status: {e.code()}")
             print(f"Error details: {e.details()}")
+            print(f"Debug error string: {e.debug_error_string()}")
 
 
 if __name__ == "__main__":
