@@ -2,9 +2,6 @@
 
 ```
 (venv) asheshvidyut@asheshvidyut:~/grpc-py-issue-39622$ python client.py
-/usr/local/google/home/asheshvidyut/grpc-py-issue-39622/venv/lib/python3.12/site-packages/google/protobuf/runtime_version.py:98: UserWarning: Protobuf gencode version 5.27.2 is exactly one major version older than the runtime version 6.31.1 at helloworld.proto. Please update the gencode to avoid compatibility violations in the next runtime release.
-  warnings.warn(
-Using service config: {"methodConfig": [{"name": [{"service": "helloworld.Greeter", "method": "SayHello"}], "retryPolicy": {"maxAttempts": 5, "initialBackoff": "1s", "maxBackoff": "1s", "backoffMultiplier": 2, "retryableStatusCodes": ["UNAVAILABLE", "RESOURCE_EXHAUSTED", "ABORTED", "INTERNAL", "UNKNOWN"]}}]}
 Starting RPC call...
 RPC failed with status: StatusCode.DEADLINE_EXCEEDED
 Error details: Deadline Exceeded
